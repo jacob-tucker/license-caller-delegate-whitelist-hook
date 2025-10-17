@@ -1,7 +1,7 @@
 {
-    "name": "lock-license-hook",
+    "name": "license-caller-delegate-whitelist-hook",
     "version": "1.0.0",
-    "description": "Boilerplate sample code for interacting with Story Protocol",
+    "description": "A hook that allows an IP owner to delegate whitelisting capabilities to a third party, who can whitelist users to mint a specific license to your IP on your behalf.",
     "directories": {
         "lib": "lib",
         "test": "test"
