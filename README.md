@@ -1,6 +1,6 @@
-# New Hook Template: `LicenseCallerWhitelistHook.sol`
+# New Hook Template: `LicenseCallerDelegateWhitelistHook.sol`
 
-This is a forked template repository that contains source code and tests for `LicenseCallerWhitelistHook.sol`. This allows you to gate who can mint your license by their address.
+This is a forked template repository that contains source code and tests for `LicenseCallerDelegateWhitelistHook.sol`. This allows an IP owner to delegate whitelisting capabilities to a third party, who can whitelist users to mint a license to your IP on your behalf.
 
 ## Quick Start
 

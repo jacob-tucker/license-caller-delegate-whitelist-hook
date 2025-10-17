@@ -11,11 +11,13 @@ import { ILicenseRegistry } from "@storyprotocol/core/interfaces/registries/ILic
 
 /// @title License Caller Delegate Whitelist Hook
 /// @notice This hook enforces whitelist restrictions for license token minting.
-///         Only addresses that have been whitelisted by the IP owner can call the mint function
-///         for a specific license attached to an IP. To use this hook, set the `licensingHook` field
-///         in the licensing config to the address of this hook.
+///         An IP owner can delegate whitelisting capabilities to a third party,
+///         who can whitelist users to mint a specific license to your IP on your behalf.
+///         Only addresses that have been whitelisted by the IP owner or a delegate
+///         can call the mint function for a specific license attached to an IP.
 /// @dev This hook whitelists the caller, not the receiver of the license tokens.
 ///      A whitelisted address can mint tokens for any receiver address.
+///      To use this hook, set the `licensingHook` field in the licensing config to the address of this hook.
 contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILicensingHook {
     string public constant override name = "LICENSE_CALLER_DELEGATE_WHITELIST_HOOK";
 
