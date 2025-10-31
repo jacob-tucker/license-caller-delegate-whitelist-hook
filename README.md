@@ -1,6 +1,6 @@
-# New Hook Template: `LicenseCallerDelegateWhitelistHook.sol`
+# New Hook Template: `DelegateWhitelistChildIpHook.sol`
 
-This is a forked template repository that contains source code and tests for `LicenseCallerDelegateWhitelistHook.sol`. This allows an IP owner to delegate whitelisting capabilities to a third party, who can whitelist users to mint a license to your IP on your behalf.
+This is a forked template repository that contains source code and tests for `DelegateWhitelistChildIpHook.sol`. This allows an IP owner to delegate whitelisting capabilities to a third party, who can whitelist users to mint a license to your IP on your behalf.
 
 ## Quick Start
 

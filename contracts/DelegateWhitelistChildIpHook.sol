@@ -9,23 +9,21 @@ import { ILicenseTemplate } from "@storyprotocol/core/interfaces/modules/licensi
 import { IIPAccount } from "@storyprotocol/core/interfaces/IIPAccount.sol";
 import { ILicenseRegistry } from "@storyprotocol/core/interfaces/registries/ILicenseRegistry.sol";
 
-/// @title License Caller Delegate Whitelist Hook
-/// @notice This hook enforces whitelist restrictions for license token minting.
+/// @title Delegate Whitelist Child IP Hook
+/// @notice This hook enforces whitelist restrictions for derivative registration.
 ///         An IP owner can delegate whitelisting capabilities to a third party,
-///         who can whitelist users to mint a specific license to your IP on your behalf.
-///         Only addresses that have been whitelisted by the IP owner or a delegate
-///         can call the mint function for a specific license attached to an IP.
-/// @dev This hook whitelists the caller, not the receiver of the license tokens.
-///      A whitelisted address can mint tokens for any receiver address.
-///      To use this hook, set the `licensingHook` field in the licensing config to the address of this hook.
-contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILicensingHook {
-    string public constant override name = "LICENSE_CALLER_DELEGATE_WHITELIST_HOOK";
+///         who can whitelist an IP owner and specific child IP to register as
+///         a derivative to your IP on your behalf.
+contract DelegateWhitelistChildIpHook is BaseModule, AccessControlled, ILicensingHook {
+    string public constant override name = "DELEGATE_WHITELIST_CHILD_IP_HOOK";
 
     ILicenseRegistry public immutable LICENSE_REGISTRY;
 
-    /// @notice Stores the whitelist status for addresses for a given license.
-    /// @dev The key is keccak256(licensorIpId, licenseTemplate, licenseTermsId, minterAddress).
+    /// @notice Stores the whitelist status for an IP owner and specific child IP to register as
+    ///         a derivative to your IP.
+    /// @dev The key is keccak256(licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter).
     /// @dev The value is true if the address is whitelisted, false otherwise.
+    /// @dev If minter is address(0), it acts as a wildcard allowing any caller.
     mapping(bytes32 => bool) private whitelist;
 
     /// @notice Stores the delegate status for addresses for a given license.
@@ -61,11 +59,13 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
     /// @param licensorIpId The licensor IP id
     /// @param licenseTemplate The license template address
     /// @param licenseTermsId The license terms id
+    /// @param childIpId The child IP id
     /// @param minter The address that was whitelisted
     event AddressWhitelisted(
         address indexed licensorIpId,
         address indexed licenseTemplate,
         uint256 indexed licenseTermsId,
+        address childIpId,
         address minter
     );
 
@@ -73,21 +73,24 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
     /// @param licensorIpId The licensor IP id
     /// @param licenseTemplate The license template address
     /// @param licenseTermsId The license terms id
+    /// @param childIpId The child IP id
     /// @param minter The address that was removed from whitelist
     event AddressRemovedFromWhitelist(
         address indexed licensorIpId,
         address indexed licenseTemplate,
         uint256 indexed licenseTermsId,
+        address childIpId,
         address minter
     );
 
-    error LicenseCallerWhitelistHook_AddressNotWhitelisted(address minter);
-    error LicenseCallerWhitelistHook_AddressAlreadyWhitelisted(address minter);
-    error LicenseCallerWhitelistHook_AddressNotInWhitelist(address minter);
-    error LicenseCallerWhitelistHook_NotOwnerOrDelegate(address caller, address ipOwner);
-    error LicenseCallerWhitelistHook_DelegateAlreadyAdded(address delegate);
-    error LicenseCallerWhitelistHook_DelegateNotFound(address delegate);
-    error LicenseCallerWhitelistHook_LicenseNotAttachedToIP();
+    error DelegateWhitelistChildIpHook_AddressNotWhitelisted(address childIpId, address minter);
+    error DelegateWhitelistChildIpHook_AddressAlreadyWhitelisted(address childIpId, address minter);
+    error DelegateWhitelistChildIpHook_AddressNotInWhitelist(address childIpId, address minter);
+    error DelegateWhitelistChildIpHook_NotOwnerOrDelegate(address caller, address ipOwner);
+    error DelegateWhitelistChildIpHook_DelegateAlreadyAdded(address delegate);
+    error DelegateWhitelistChildIpHook_DelegateNotFound(address delegate);
+    error DelegateWhitelistChildIpHook_LicenseNotAttachedToIP();
+    error DelegateWhitelistChildIpHook_MintLicenseTokensDisabled();
 
     constructor(
         address accessController,
@@ -109,12 +112,12 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
         address delegate
     ) external verifyPermission(licensorIpId) {
         if (!LICENSE_REGISTRY.hasIpAttachedLicenseTerms(licensorIpId, licenseTemplate, licenseTermsId)) {
-            revert LicenseCallerWhitelistHook_LicenseNotAttachedToIP();
+            revert DelegateWhitelistChildIpHook_LicenseNotAttachedToIP();
         }
 
         address ipOwner = IIPAccount(payable(licensorIpId)).owner();
         bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, delegate));
-        if (delegates[key]) revert LicenseCallerWhitelistHook_DelegateAlreadyAdded(delegate);
+        if (delegates[key]) revert DelegateWhitelistChildIpHook_DelegateAlreadyAdded(delegate);
 
         delegates[key] = true;
         emit DelegateAdded(licensorIpId, licenseTemplate, licenseTermsId, delegate);
@@ -133,7 +136,7 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
     ) external verifyPermission(licensorIpId) {
         address ipOwner = IIPAccount(payable(licensorIpId)).owner();
         bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, delegate));
-        if (!delegates[key]) revert LicenseCallerWhitelistHook_DelegateNotFound(delegate);
+        if (!delegates[key]) revert DelegateWhitelistChildIpHook_DelegateNotFound(delegate);
 
         delegates[key] = false;
         emit DelegateRemoved(licensorIpId, licenseTemplate, licenseTermsId, delegate);
@@ -161,25 +164,29 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
     /// @param licensorIpId The licensor IP id
     /// @param licenseTemplate The license template address
     /// @param licenseTermsId The license terms id
-    /// @param minter The address to add to the whitelist
+    /// @param childIpId The child IP id
+    /// @param minter The address to add to the whitelist (use address(0) to allow any caller)
     function addToWhitelist(
         address licensorIpId,
         address licenseTemplate,
         uint256 licenseTermsId,
+        address childIpId,
         address minter
     ) external {
         address ipOwner = IIPAccount(payable(licensorIpId)).owner();
         _verifyOwnerOrDelegate(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, msg.sender);
 
         if (!LICENSE_REGISTRY.hasIpAttachedLicenseTerms(licensorIpId, licenseTemplate, licenseTermsId)) {
-            revert LicenseCallerWhitelistHook_LicenseNotAttachedToIP();
+            revert DelegateWhitelistChildIpHook_LicenseNotAttachedToIP();
         }
 
-        bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, minter));
-        if (whitelist[key]) revert LicenseCallerWhitelistHook_AddressAlreadyWhitelisted(minter);
+        bytes32 key = keccak256(
+            abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter)
+        );
+        if (whitelist[key]) revert DelegateWhitelistChildIpHook_AddressAlreadyWhitelisted(childIpId, minter);
 
         whitelist[key] = true;
-        emit AddressWhitelisted(licensorIpId, licenseTemplate, licenseTermsId, minter);
+        emit AddressWhitelisted(licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter);
     }
 
     /// @notice Remove an address from the whitelist for a specific license
@@ -187,37 +194,45 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
     /// @param licensorIpId The licensor IP id
     /// @param licenseTemplate The license template address
     /// @param licenseTermsId The license terms id
+    /// @param childIpId The child IP id
     /// @param minter The address to remove from the whitelist
     function removeFromWhitelist(
         address licensorIpId,
         address licenseTemplate,
         uint256 licenseTermsId,
+        address childIpId,
         address minter
     ) external {
         address ipOwner = IIPAccount(payable(licensorIpId)).owner();
         _verifyOwnerOrDelegate(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, msg.sender);
 
-        bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, minter));
-        if (!whitelist[key]) revert LicenseCallerWhitelistHook_AddressNotInWhitelist(minter);
+        bytes32 key = keccak256(
+            abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter)
+        );
+        if (!whitelist[key]) revert DelegateWhitelistChildIpHook_AddressNotInWhitelist(childIpId, minter);
 
         whitelist[key] = false;
-        emit AddressRemovedFromWhitelist(licensorIpId, licenseTemplate, licenseTermsId, minter);
+        emit AddressRemovedFromWhitelist(licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter);
     }
 
     /// @notice Check if an address is whitelisted for a specific license
     /// @param licensorIpId The licensor IP id
     /// @param licenseTemplate The license template address
     /// @param licenseTermsId The license terms id
+    /// @param childIpId The child IP id
     /// @param minter The address to check
     /// @return isWhitelisted True if the address is whitelisted, false otherwise
     function isWhitelisted(
         address licensorIpId,
         address licenseTemplate,
         uint256 licenseTermsId,
+        address childIpId,
         address minter
     ) external view returns (bool isWhitelisted) {
         address ipOwner = IIPAccount(payable(licensorIpId)).owner();
-        bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, minter));
+        bytes32 key = keccak256(
+            abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter)
+        );
         return whitelist[key];
     }
 
@@ -242,8 +257,7 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
         address receiver,
         bytes calldata hookData
     ) external returns (uint256 totalMintingFee) {
-        _checkWhitelist(licensorIpId, licenseTemplate, licenseTermsId, caller);
-        return _calculateFee(licenseTemplate, licenseTermsId, amount);
+        revert DelegateWhitelistChildIpHook_MintLicenseTokensDisabled();
     }
 
     /// @notice This function is called before finalizing LicensingModule.registerDerivative(), after calling
@@ -264,7 +278,7 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
         uint256 licenseTermsId,
         bytes calldata hookData
     ) external returns (uint256 mintingFee) {
-        _checkWhitelist(parentIpId, licenseTemplate, licenseTermsId, caller);
+        _checkWhitelist(parentIpId, licenseTemplate, licenseTermsId, childIpId, caller);
         return _calculateFee(licenseTemplate, licenseTermsId, 1);
     }
 
@@ -301,18 +315,34 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
     /// @param licensorIpId The licensor IP id
     /// @param licenseTemplate The license template address
     /// @param licenseTermsId The license terms id
+    /// @param childIpId The child IP id
     /// @param minter The address to check
     function _checkWhitelist(
         address licensorIpId,
         address licenseTemplate,
         uint256 licenseTermsId,
+        address childIpId,
         address minter
     ) internal view {
         address ipOwner = IIPAccount(payable(licensorIpId)).owner();
-        bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, minter));
-        if (!whitelist[key]) {
-            revert LicenseCallerWhitelistHook_AddressNotWhitelisted(minter);
+
+        // First check if the specific minter is whitelisted
+        bytes32 key = keccak256(
+            abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, childIpId, minter)
+        );
+        if (whitelist[key]) {
+            return;
         }
+
+        // If not, check if address(0) wildcard is whitelisted
+        bytes32 wildcardKey = keccak256(
+            abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, childIpId, address(0))
+        );
+        if (whitelist[wildcardKey]) {
+            return;
+        }
+
+        revert DelegateWhitelistChildIpHook_AddressNotWhitelisted(childIpId, minter);
     }
 
     /// @dev calculates the minting fee for a given license
@@ -345,7 +375,7 @@ contract LicenseCallerDelegateWhitelistHook is BaseModule, AccessControlled, ILi
         if (caller != ipOwner) {
             bytes32 key = keccak256(abi.encodePacked(ipOwner, licensorIpId, licenseTemplate, licenseTermsId, caller));
             if (!delegates[key]) {
-                revert LicenseCallerWhitelistHook_NotOwnerOrDelegate(caller, ipOwner);
+                revert DelegateWhitelistChildIpHook_NotOwnerOrDelegate(caller, ipOwner);
             }
         }
     }
